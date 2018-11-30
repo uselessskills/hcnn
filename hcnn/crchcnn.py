@@ -37,8 +37,8 @@ class CRCHCNN:
 
         self.forecast_horizon = forecast_horizon
 
-    def train(self, data, state_c=None, state_rc=None, lr=0.001, epochs=10, criterion=torch.nn.MSELoss(), verbose=False,
-              plot_loss=False, plot_pred_train=False):
+    def train(self, data, state_c=None, state_rc=None, lr=0.001, epochs=10, criterion=torch.nn.MSELoss(),
+              reduce_lr_epochs=None, verbose=False, plot_loss=False, plot_pred_train=False):
         opt_c = torch.optim.Adam(self.hcnn_c.hcnn.parameters(), lr=lr)
         opt_rc = torch.optim.Adam(self.hcnn_rc.hcnn.parameters(), lr=lr)
         # criterion = LogCosh.apply  # torch.nn.MSELoss() # + self.hcnn.W.weight.abs().sum()
@@ -46,6 +46,7 @@ class CRCHCNN:
         state_c = self.hcnn_c.hcnn.init_state if state_c is None else state_c.clone()
         state_rc = self.hcnn_rc.hcnn.init_state if state_rc is None else state_rc.clone()
 
+        lr_c, lr_rc = lr, lr
         losses, losses_c, losses_rc = [], [], []
         for i in range(epochs):
             y_c_sample = self.hcnn_c.sample(state_c, len(data))  # from start to end
@@ -67,14 +68,25 @@ class CRCHCNN:
             loss_crc = criterion(torch.tensor(y_crc).float(), torch.tensor(data).float()) / len(data)
             losses.append(loss_crc)
 
+            if (reduce_lr_epochs is not None) and (i >= reduce_lr_epochs):
+                if loss_c > losses_c[i-reduce_lr_epochs]:
+                    lr_c /= 2
+                for param_group in opt_c.param_groups:
+                    param_group['lr'] = lr_c
+
+                if loss_rc > losses_rc[i-reduce_lr_epochs]:
+                    lr_rc /= 2
+                for param_group in opt_rc.param_groups:
+                    param_group['lr'] = lr_rc
+
             if verbose:
                 print(f'Train epoch {i+1}/{epochs}, loss: {loss_crc}')
 
             if plot_loss and (i + 1) % 25 == 0:
                 fig, ax = plt.subplots()
                 ax.plot(np.arange(1, i + 2), np.array(losses), 'grey', alpha=0.5, label=f'crc loss: {loss_crc}')
-                ax.plot(np.arange(1, i + 2), np.array(losses_c), label=f'causal loss: {loss_c}')
-                ax.plot(np.arange(1, i + 2), np.array(losses_rc), label=f'retro-causal loss: {loss_rc}')
+                ax.plot(np.arange(1, i + 2), np.array(losses_c), label=f'causal loss [lr_c = {lr_c}]: {loss_c}')
+                ax.plot(np.arange(1, i + 2), np.array(losses_rc), label=f'retro-causal loss [lr_rc = {lr_rc}]: {loss_rc}')
                 ax.set_xlabel('epoch'), ax.set_ylabel('loss'), ax.set_title(f'Traning loss on epoch {i+1}')
                 legend_loss = ax.legend(frameon=True, loc='upper right')
                 legend_loss.get_frame().set_color('white')
@@ -86,8 +98,8 @@ class CRCHCNN:
             if plot_pred_train and (i + 1) % 25 == 0:
                 fig, ax = plt.subplots(figsize=(12, 4), ncols=2)
                 ax[0].plot(np.arange(1, i + 2), np.array(losses), 'grey', alpha=0.5, label=f'crc loss: {loss_crc}')
-                ax[0].plot(np.arange(1, i + 2), np.array(losses_c), label=f'causal loss: {loss_c}')
-                ax[0].plot(np.arange(1, i + 2), np.array(losses_rc), label=f'retro-causal loss: {loss_rc}')
+                ax[0].plot(np.arange(1, i + 2), np.array(losses_c), label=f'causal loss [lr_c = {lr_c}]: {loss_c}')
+                ax[0].plot(np.arange(1, i + 2), np.array(losses_rc), label=f'retro-causal loss [lr_rc = {lr_rc}]: {loss_rc}')
                 ax[0].set_xlabel('epoch'), ax[0].set_ylabel('loss'), ax[0].set_title(f'Traning loss on epoch {i+1}')
                 legend_loss = ax[0].legend(frameon=True, loc='upper right')
                 legend_loss.get_frame().set_color('white')

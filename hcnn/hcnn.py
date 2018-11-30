@@ -38,11 +38,10 @@ class HCNN:
         opt.step()
         return loss.item() / len(data)
 
-    def train(self, data, state=None, lr=0.001, epochs=10, criterion=torch.nn.MSELoss(), verbose=False, plot_loss=False,
+    def train(self, data, state=None, lr=0.001, epochs=10, criterion=torch.nn.MSELoss(), reduce_lr_epochs=None, verbose=False, plot_loss=False,
               plot_pred_train=False):
-        opt = torch.optim.Adam(self.hcnn.parameters(), lr=lr)
         # criterion = LogCosh.apply  # torch.nn.MSELoss() # + self.hcnn.W.weight.abs().sum()
-
+        opt = torch.optim.Adam(self.hcnn.parameters(), lr=lr)
         state = self.hcnn.init_state if state is None else state.clone()
 
         losses = []
@@ -50,8 +49,16 @@ class HCNN:
             loss = self.bptt(self.hcnn, state, data, opt, criterion)
             losses.append(loss)
 
+            if (reduce_lr_epochs is not None) and (i >= reduce_lr_epochs):
+                if loss > losses[i-reduce_lr_epochs]:
+                    lr /= 2
+
+                for param_group in opt.param_groups:
+                    param_group['lr'] = lr
+
+
             if verbose:
-                print(f'Train epoch {i+1}/{epochs}, loss: {loss}')
+                print(f'Train epoch {i+1}/{epochs}, lr={lr}, loss: {loss}')
 
             if plot_loss and (i + 1) % 25 == 0:
                 fig, ax = plt.subplots()
@@ -67,7 +74,7 @@ class HCNN:
                 fig, ax = plt.subplots(figsize=(12, 4), ncols=2)
                 ax[0].plot(np.arange(1, i + 2), np.array(losses), 'grey')
                 ax[0].set_xlabel('epoch'), ax[0].set_ylabel('loss'), ax[0].set_title(
-                    f'Traning loss on epoch {i+1}: {loss}')
+                    f'Traning loss on epoch {i+1} [lr={lr}]: {loss}')
 
                 pred = self.sample(state, int(len(data) * 1.0))
                 colors = list(dict(mcolors.BASE_COLORS, **mcolors.CSS4_COLORS).keys())
